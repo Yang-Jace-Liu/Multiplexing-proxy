@@ -23,12 +23,10 @@ public class Client {
         remoteSockets = new ArrayList<>();
     }
 
-    public void Start() {
-        logger.debug("Client started on port: " + config.getRemotePort());
+    public void handshake() {
+        Socket socket;
         try {
-            serverSocket = new ServerSocket(config.getServerPort());
-            Socket socket = new Socket(config.getRemoteIp(), config.getRemotePort());
-
+            socket = new Socket(config.getRemoteIp(), config.getRemotePort());
             DataOutputStream out = new DataOutputStream(socket.getOutputStream());
             DataInputStream in = new DataInputStream(socket.getInputStream());
 
@@ -41,12 +39,16 @@ public class Client {
             for (int i = 0; i < numberOfNewConnections; i++) {
                 remoteSockets.add(new Socket(config.getRemoteIp(), config.getRemotePort()));
             }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 
-            in.close();
-            out.close();
-            socket.close();
-
-            //TODO: manipulate ports
+    public void Start() {
+        logger.debug("Client started on port: " + config.getRemotePort());
+        try {
+            serverSocket = new ServerSocket(config.getServerPort());
+            handshake();
         } catch (IOException e) {
             e.printStackTrace();
         }

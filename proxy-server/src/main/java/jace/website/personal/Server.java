@@ -45,7 +45,7 @@ public class Server {
 
             for (int i = 1; i < resultNumberOfConnections; i++) {
                 Socket anotherSocket = serverSocket.accept();
-                logger.debug("A client connected to server through port " + socket.getPort());
+                logger.debug("A client connected to server through port " + anotherSocket.getPort());
                 sockets.put(id, anotherSocket);
             }
         } catch (IOException e) {
