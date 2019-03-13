@@ -48,4 +48,9 @@ public class Config {
     public void setRemoteIp(String remoteIp) {
         this.remoteIp = remoteIp;
     }
+
+    public class Target {
+        public static final int PROXY = 1;
+        public static final int CLIENT = 2;
+    }
 }

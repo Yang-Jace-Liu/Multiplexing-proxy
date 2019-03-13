@@ -8,8 +8,8 @@ public class Data {
     private static Data instance = null;
     private int id = 0;
 
-    public SocketChannel serviceSocketChannel;
-    public Set<SocketChannel> clientSocketChannels = new HashSet<>();
+    public SocketChannel clientSocketChannel;
+    public Set<SocketChannel> proxySocketChannels = new HashSet<>();
 
     private Data(){}
 
