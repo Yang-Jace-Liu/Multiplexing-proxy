@@ -23,6 +23,7 @@ public class Server {
     private int servicePort;
     private int numberOfConnections; // maximum number of connections
     private ServerSocketChannel serverSocketChannel;
+    private Selector selector;
 
     private List<Task> tasks = new ArrayList<>();
 
@@ -36,7 +37,7 @@ public class Server {
 
     public void start() {
         try {
-            Selector selector = Selector.open();
+            selector = Selector.open();
 
             // Create proxy server
             serverSocketChannel = ServerSocketChannel.open();
@@ -44,11 +45,12 @@ public class Server {
             serverSocketChannel.bind(new InetSocketAddress("0.0.0.0", port));
             serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 
-            // Connect to service
+//            // Connect to service
             SocketChannel serviceSocketChannel = SocketChannel.open();
             serviceSocketChannel.configureBlocking(false);
-            serviceSocketChannel.connect(new InetSocketAddress("localhost", servicePort));
+            serviceSocketChannel.connect(new InetSocketAddress("www.calgary.ca", servicePort));
             serviceSocketChannel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+            serviceSocketChannel.socket().setKeepAlive(true);
             Data.getInstance().serviceSocketChannel = serviceSocketChannel;
 
             while (true) {
@@ -59,9 +61,9 @@ public class Server {
                         iterator.remove();
 
                         if (key.isConnectable()) processConnection(key);
-                        if (key.isReadable()) processRead(key);
                         if (key.isWritable()) processWrite(key);
-                        if (key.isAcceptable()) processAccept(key, selector);
+                        if (key.isAcceptable()) processAccept(key);
+                        if (key.isReadable()) processRead(key);
                     }
                 }
                 Thread.sleep(10);
@@ -71,31 +73,42 @@ public class Server {
         }
     }
 
-    private void processAccept(SelectionKey key, Selector selector) throws IOException {
+    private void processAccept(SelectionKey key) throws IOException {
+        ServerSocketChannel serverSocketChannel = (ServerSocketChannel) key.channel();
         SocketChannel sc = serverSocketChannel.accept();
         sc.configureBlocking(false);
         sc.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+        Data.getInstance().clientSocketChannels.add(sc);
         logger.debug("Connection accepted: " + sc.getRemoteAddress());
     }
 
     private void processRead(SelectionKey key) throws IOException {
         SocketChannel sc = (SocketChannel) key.channel();
-        if (sc.read(buffer) <= 0) {
-            sc.close();
+        if (sc.read(buffer) < 0) {
             Data.getInstance().clientSocketChannels.remove(sc);
+            logger.debug("Connection disconnected from " + sc.getRemoteAddress());
+            sc.close();
         }
 
-        int target;
-        if (sc == Data.getInstance().serviceSocketChannel) target = Config.Target.CLIENT;
-        else target = Config.Target.SERVICE;
+        System.out.println(new String(buffer.array()));
 
-        addTask(new Task(target, buffer.array().clone()));
+        if (sc == Data.getInstance().serviceSocketChannel){
+            this.tasks.add(new Task(Config.Target.CLIENT, buffer.array().clone()));
+        }
+        else {
+            this.tasks.add(new Task(Config.Target.SERVICE, buffer.array().clone()));
+        }
+
     }
 
     private void processWrite(SelectionKey key) throws IOException {
         SocketChannel sc = (SocketChannel) key.channel();
-        for (Task task : this.tasks) {
+        Iterator<Task> iterator = tasks.iterator();
+        while(iterator.hasNext()){
+            Task task = iterator.next();
             if (task.getTarget() == sc) {
+                iterator.remove();
+                System.out.println("write!!!");
                 sc.write(ByteBuffer.wrap(task.getPayload()));
             }
         }
@@ -112,9 +125,5 @@ public class Server {
                 logger.debug("Failed to establish a connection");
             }
         }
-    }
-
-    private void addTask(Task task) {
-        this.tasks.add(task);
     }
 }

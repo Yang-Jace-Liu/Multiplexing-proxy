@@ -57,10 +57,10 @@ public class Client {
                         SelectionKey key = iterator.next();
                         iterator.remove();
 
-                        if (key.isConnectable()) processConnection(key);
-                        if (key.isReadable()) processRead(key);
-                        if (key.isWritable()) processWrite(key);
-                        if (key.isAcceptable()) processAccept(key, selector);
+                        if (key.isValid() && key.isConnectable()) processConnection(key);
+                        if (key.isValid() && key.isWritable()) processWrite(key);
+                        if (key.isValid() && key.isAcceptable()) processAccept(key, selector);
+                        if (key.isValid() && key.isReadable()) processRead(key);
                     }
                 }
             }
@@ -75,10 +75,9 @@ public class Client {
         sc.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
         logger.debug("Connection accepted: " + sc.getRemoteAddress());
 
-        if (Data.getInstance().clientSocketChannel != null) {
+        if (Data.getInstance().clientSocketChannel != null)
             Data.getInstance().clientSocketChannel.close();
-            Data.getInstance().clientSocketChannel = sc;
-        }
+        Data.getInstance().clientSocketChannel = sc;
     }
 
     private void processConnection(SelectionKey key) {
@@ -102,14 +101,19 @@ public class Client {
             sc.close();
             return;
         }
+        System.out.println(new String(buffer.array()));
         if (sc == Data.getInstance().clientSocketChannel) tasks.add(new Task(Config.Target.PROXY, buffer.array().clone()));
         else tasks.add(new Task(Config.Target.CLIENT, buffer.array().clone()));
     }
 
     private void processWrite(SelectionKey key) throws IOException {
         SocketChannel sc = (SocketChannel) key.channel();
-        for (Task task : tasks) {
+        Iterator<Task> iterator = tasks.iterator();
+        while(iterator.hasNext()){
+            Task task = iterator.next();
             if (task.getTarget() == sc) {
+                System.out.println("write!!!");
+                iterator.remove();
                 sc.write(ByteBuffer.wrap(task.getPayload()));
             }
         }
