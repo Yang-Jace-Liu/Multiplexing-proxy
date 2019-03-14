@@ -43,13 +43,8 @@ public class Server {
             serverSocketChannel.bind(new InetSocketAddress("0.0.0.0", port));
             serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 
-//            // Connect to service
-            SocketChannel serviceSocketChannel = SocketChannel.open();
-            serviceSocketChannel.configureBlocking(false);
-            serviceSocketChannel.connect(new InetSocketAddress("www.calgary.ca", servicePort));
-            serviceSocketChannel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ | SelectionKey.OP_WRITE);
-            serviceSocketChannel.socket().setKeepAlive(true);
-            Data.getInstance().serviceSocketChannel = serviceSocketChannel;
+            // Connect to service
+            connectToService();
 
             while (true) {
                 if (selector.select() > 0) {
@@ -83,19 +78,27 @@ public class Server {
     private void processRead(SelectionKey key) throws IOException {
         SocketChannel sc = (SocketChannel) key.channel();
         ByteBuffer buffer = ByteBuffer.allocate(10240);
-        if (sc.read(buffer) < 0) {
-            Data.getInstance().clientSocketChannels.remove(sc);
-            logger.debug("Connection disconnected from " + sc.getRemoteAddress());
-            sc.close();
-        } else {
-            logger.debug("Read from " + sc.getRemoteAddress());
-            System.out.println(new String(buffer.array()));
-
-            if (sc.getRemoteAddress().toString().equals(Data.getInstance().serivceAddress)) {
-                this.tasks.add(new Task(Config.Target.CLIENT, buffer.array()));
+        try {
+            if (sc.read(buffer) <= 0) {
+                Data.getInstance().clientSocketChannels.remove(sc);
+                logger.debug("Connection disconnected from " + sc.getRemoteAddress());
+                sc.close();
             } else {
-                this.tasks.add(new Task(Config.Target.SERVICE, buffer.array()));
+                logger.debug("Read from " + sc.getRemoteAddress());
+                System.out.println(new String(buffer.array()));
+
+                if (sc.getRemoteAddress().toString().equals(Data.getInstance().serivceAddress)) {
+                    this.tasks.add(new Task(Config.Target.CLIENT, buffer.array()));
+                } else {
+                    if (Data.getInstance().serviceSocketChannel == null) connectToService();
+                    this.tasks.add(new Task(Config.Target.SERVICE, buffer.array()));
+                }
             }
+        } catch (IOException e) {
+            if (sc.getRemoteAddress().toString().equals(Data.getInstance().serivceAddress)) {
+                Data.getInstance().serviceSocketChannel = null;
+            }
+            sc.close();
         }
     }
 
@@ -126,5 +129,14 @@ public class Server {
                 logger.debug("Failed to establish a connection");
             }
         }
+    }
+
+    private void connectToService() throws IOException {
+        SocketChannel serviceSocketChannel = SocketChannel.open();
+        serviceSocketChannel.configureBlocking(false);
+        serviceSocketChannel.connect(new InetSocketAddress("127.0.0.1", servicePort));
+        serviceSocketChannel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+        serviceSocketChannel.socket().setKeepAlive(true);
+        Data.getInstance().serviceSocketChannel = serviceSocketChannel;
     }
 }
