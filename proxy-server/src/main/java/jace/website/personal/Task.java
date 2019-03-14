@@ -4,12 +4,12 @@ import java.nio.channels.SocketChannel;
 import java.util.Random;
 
 public class Task {
-    private SocketChannel target;
+    private int target;
     private byte[] payload;
     private Random random = new Random();
 
     public Task(int target, byte[] payload) {
-        this.target = schedule(target);
+        this.target = target;
         this.payload = payload;
     }
 
@@ -18,7 +18,7 @@ public class Task {
     }
 
     public SocketChannel getTarget() {
-        return target;
+        return schedule(target);
     }
 
     public byte[] getPayload() {
@@ -31,7 +31,7 @@ public class Task {
             // random
             int size = Data.getInstance().clientSocketChannels.size();
             int ind = random.nextInt(size);
-            return (SocketChannel) Data.getInstance().clientSocketChannels.toArray()[ind];
+            return (SocketChannel) Data.getInstance().clientSocketChannels.toArray()[0];
         }
     }
 }

@@ -20,7 +20,6 @@ import java.util.Set;
 
 public class Client {
     private Config config = null;
-    private ByteBuffer buffer = ByteBuffer.allocate(10240);
     private List<Task> tasks = new ArrayList<>();
     private ServerSocketChannel serverSocketChannel;
 
@@ -51,6 +50,7 @@ public class Client {
             }
 
             while (true) {
+                Thread.sleep(10);
                 if (selector.select() > 0) {
                     Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
                     while (iterator.hasNext()) {
@@ -64,7 +64,7 @@ public class Client {
                     }
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         }
     }
@@ -96,16 +96,21 @@ public class Client {
     private void processRead(SelectionKey key) throws IOException {
         SocketChannel sc = (SocketChannel) key.channel();
         logger.debug("Read from " + sc.getRemoteAddress().toString());
-        buffer.clear();
-        int length = sc.read(buffer);
-        if (length <= 0) {
-            logger.debug("Remote closed the connection");
+        ByteBuffer buffer = ByteBuffer.allocate(10240);
+        try {
+            if (sc.read(buffer) <= 0) {
+                logger.debug("Remote closed the connection");
+                sc.close();
+            } else {
+                if (sc == Data.getInstance().clientSocketChannel)
+                    tasks.add(new Task(Config.Target.PROXY, buffer.array().clone()));
+                else tasks.add(new Task(Config.Target.CLIENT, buffer.array().clone()));
+            }
+        } catch (IOException e) {
+            logger.debug("Disconnected from " + sc.getRemoteAddress());
+            Data.getInstance().clientSocketChannel = null;
             sc.close();
-            return;
         }
-        System.out.println(new String(buffer.array()));
-        if (sc == Data.getInstance().clientSocketChannel) tasks.add(new Task(Config.Target.PROXY, buffer.array().clone()));
-        else tasks.add(new Task(Config.Target.CLIENT, buffer.array().clone()));
     }
 
     private void processWrite(SelectionKey key) throws IOException {
@@ -114,9 +119,11 @@ public class Client {
         while(iterator.hasNext()){
             Task task = iterator.next();
             if (task.getTarget() == sc) {
-                System.out.println("write!!!");
                 iterator.remove();
-                sc.write(ByteBuffer.wrap(task.getPayload()));
+                try {
+                    sc.write(ByteBuffer.wrap(task.getPayload()));
+                    logger.debug("Write to " + sc.getRemoteAddress());
+                } catch (IOException e) { }
             }
         }
     }

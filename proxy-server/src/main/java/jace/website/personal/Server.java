@@ -44,7 +44,7 @@ public class Server {
             serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 
             // Connect to service
-            connectToService();
+//            connectToService();
 
             while (true) {
                 if (selector.select() > 0) {
@@ -79,18 +79,24 @@ public class Server {
         SocketChannel sc = (SocketChannel) key.channel();
         ByteBuffer buffer = ByteBuffer.allocate(10240);
         try {
-            if (sc.read(buffer) <= 0) {
-                Data.getInstance().clientSocketChannels.remove(sc);
+            if (sc.read(buffer) <= 1) {
+                if (sc == Data.getInstance().serviceSocketChannel) {
+                    Data.getInstance().serviceSocketChannel = null;
+                } else {
+                    Data.getInstance().clientSocketChannels.remove(sc);
+                }
                 logger.debug("Connection disconnected from " + sc.getRemoteAddress());
-                sc.close();
+                key.cancel();
             } else {
                 logger.debug("Read from " + sc.getRemoteAddress());
-                System.out.println(new String(buffer.array()));
 
                 if (sc.getRemoteAddress().toString().equals(Data.getInstance().serivceAddress)) {
                     this.tasks.add(new Task(Config.Target.CLIENT, buffer.array()));
                 } else {
-                    if (Data.getInstance().serviceSocketChannel == null) connectToService();
+                    if (Data.getInstance().serviceSocketChannel == null){
+                        logger.debug("Trying to connect to the service server");
+                        connectToService();
+                    }
                     this.tasks.add(new Task(Config.Target.SERVICE, buffer.array()));
                 }
             }
@@ -98,7 +104,7 @@ public class Server {
             if (sc.getRemoteAddress().toString().equals(Data.getInstance().serivceAddress)) {
                 Data.getInstance().serviceSocketChannel = null;
             }
-            sc.close();
+            key.cancel();
         }
     }
 
@@ -110,7 +116,6 @@ public class Server {
             if (task.getTarget() == sc) {
                 iterator.remove();
                 logger.debug("Write to " + sc.getRemoteAddress());
-                System.out.println(new String(task.getPayload()));
                 sc.write(ByteBuffer.wrap(task.getPayload()));
             }
         }
@@ -123,7 +128,6 @@ public class Server {
                 sc.finishConnect();
                 logger.debug("Established a connection to " + sc.getRemoteAddress());
                 Data.getInstance().serivceAddress = sc.getRemoteAddress().toString();
-                System.out.println(sc);
             } catch (IOException e) {
                 e.printStackTrace();
                 logger.debug("Failed to establish a connection");
@@ -134,7 +138,7 @@ public class Server {
     private void connectToService() throws IOException {
         SocketChannel serviceSocketChannel = SocketChannel.open();
         serviceSocketChannel.configureBlocking(false);
-        serviceSocketChannel.connect(new InetSocketAddress("127.0.0.1", servicePort));
+        serviceSocketChannel.connect(new InetSocketAddress("cloud.jace.website", servicePort));
         serviceSocketChannel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ | SelectionKey.OP_WRITE);
         serviceSocketChannel.socket().setKeepAlive(true);
         Data.getInstance().serviceSocketChannel = serviceSocketChannel;

@@ -31,7 +31,7 @@ public class Task {
             // random
             int size = Data.getInstance().proxySocketChannels.size();
             int ind = random.nextInt(size);
-            return (SocketChannel) Data.getInstance().proxySocketChannels.toArray()[ind];
+            return (SocketChannel) Data.getInstance().proxySocketChannels.toArray()[0];
         }
     }
 }
