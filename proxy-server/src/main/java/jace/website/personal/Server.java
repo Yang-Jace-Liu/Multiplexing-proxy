@@ -27,8 +27,6 @@ public class Server {
 
     private List<Task> tasks = new ArrayList<>();
 
-    private ByteBuffer buffer = ByteBuffer.allocate(10240);
-
     public Server(Config config) {
         this.port = config.getPort();
         this.servicePort = config.getServicePort();
@@ -84,21 +82,21 @@ public class Server {
 
     private void processRead(SelectionKey key) throws IOException {
         SocketChannel sc = (SocketChannel) key.channel();
+        ByteBuffer buffer = ByteBuffer.allocate(10240);
         if (sc.read(buffer) < 0) {
             Data.getInstance().clientSocketChannels.remove(sc);
             logger.debug("Connection disconnected from " + sc.getRemoteAddress());
             sc.close();
-        }
+        } else {
+            logger.debug("Read from " + sc.getRemoteAddress());
+            System.out.println(new String(buffer.array()));
 
-        System.out.println(new String(buffer.array()));
-
-        if (sc == Data.getInstance().serviceSocketChannel){
-            this.tasks.add(new Task(Config.Target.CLIENT, buffer.array().clone()));
+            if (sc.getRemoteAddress().toString().equals(Data.getInstance().serivceAddress)) {
+                this.tasks.add(new Task(Config.Target.CLIENT, buffer.array()));
+            } else {
+                this.tasks.add(new Task(Config.Target.SERVICE, buffer.array()));
+            }
         }
-        else {
-            this.tasks.add(new Task(Config.Target.SERVICE, buffer.array().clone()));
-        }
-
     }
 
     private void processWrite(SelectionKey key) throws IOException {
@@ -108,7 +106,8 @@ public class Server {
             Task task = iterator.next();
             if (task.getTarget() == sc) {
                 iterator.remove();
-                System.out.println("write!!!");
+                logger.debug("Write to " + sc.getRemoteAddress());
+                System.out.println(new String(task.getPayload()));
                 sc.write(ByteBuffer.wrap(task.getPayload()));
             }
         }
@@ -120,6 +119,8 @@ public class Server {
             try {
                 sc.finishConnect();
                 logger.debug("Established a connection to " + sc.getRemoteAddress());
+                Data.getInstance().serivceAddress = sc.getRemoteAddress().toString();
+                System.out.println(sc);
             } catch (IOException e) {
                 e.printStackTrace();
                 logger.debug("Failed to establish a connection");

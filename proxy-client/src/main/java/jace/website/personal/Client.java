@@ -95,6 +95,8 @@ public class Client {
 
     private void processRead(SelectionKey key) throws IOException {
         SocketChannel sc = (SocketChannel) key.channel();
+        logger.debug("Read from " + sc.getRemoteAddress().toString());
+        buffer.clear();
         int length = sc.read(buffer);
         if (length <= 0) {
             logger.debug("Remote closed the connection");

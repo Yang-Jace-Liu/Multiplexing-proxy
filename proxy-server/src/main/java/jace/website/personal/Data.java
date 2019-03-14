@@ -6,9 +6,10 @@ import java.util.Set;
 
 public class Data {
     private static Data instance = null;
+    public SocketChannel serviceSocketChannel;
     private int id = 0;
 
-    public SocketChannel serviceSocketChannel;
+    public String serivceAddress;
     public Set<SocketChannel> clientSocketChannels = new HashSet<>();
 
     private Data(){}
