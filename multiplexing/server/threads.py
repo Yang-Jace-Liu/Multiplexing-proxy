@@ -13,7 +13,7 @@ class LinkThread(Thread):
 
         self.socket = connection  # type: socket.socket
         self.remote = address
-        self.writer_thread = Data().writer_thread  # type:WriterThread
+        self.writer_thread = Data().writer_thread  # type: WriterThread
 
     def run(self):
         while True:
