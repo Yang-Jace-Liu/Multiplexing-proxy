@@ -5,7 +5,7 @@ from multiplexing.server.config import Config
 
 
 def main():
-    server = Server(Config())
+    server = Server(Config(service_hostname="cloud.jace.website"))
     server.start()
 
 

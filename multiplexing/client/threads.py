@@ -39,6 +39,7 @@ class SessionThread(Thread):
             self.write_thread.join()
         for link_thread in self.link_threads:
             link_thread.join()
+        self.logger.debug("Session ended")
 
     def run(self):
         self.socket.settimeout(60)
@@ -58,8 +59,12 @@ class SessionThread(Thread):
                     self.logger.debug("Disconnected")
                     self.end()
                     return
+                try:
+                    self.logger.debug("Read from client: " + buf.decode("utf-8"))
+                except UnicodeDecodeError:
+                    self.logger.debug("Read from client: Binary data")
                 self.write_thread.add_task(WriterThread.TARGET_REMOTE, buf)
-            except TimeoutError as e:
+            except socket.timeout as e:
                 if self.stop.is_set():
                     self.end()
                     return
@@ -91,6 +96,10 @@ class LinkThread(Thread):
         self.socket.settimeout(60)
         self.socket.connect((self.config.proxy_server_hostname, self.config.proxy_server_port))
 
+    def end(self):
+        self.socket.close()
+        self.session_thread.stop.set()
+
     def run(self):
         self.connect()
         while True:
@@ -98,12 +107,12 @@ class LinkThread(Thread):
                 buf = self.socket.recv(8192)
                 if len(buf) <= 0:
                     self.logger.debug("Disconnected")
-                    self.socket.close()
+                    self.end()
                     return
                 self.write_thread.add_task(self.session_thread, buf)
-            except TimeoutError as e:
+            except socket.timeout as e:
                 if self.stop.is_set():
-                    self.socket.close()
+                    self.end()
                     return
 
 
@@ -113,6 +122,8 @@ class WriterThread(Thread):
 
     def __init__(self, session_thread: SessionThread, link_threads):
         super().__init__()
+        self.name = "Session-" + str(session_thread.id) + ":WriterThread"
+        self.logger = logger.getLogger(self.name)
 
         self.stop = Event()
         self.event = Event()
@@ -123,13 +134,13 @@ class WriterThread(Thread):
         self.link_threads = link_threads
 
         for link_thread in link_threads:
-            self.add_task(link_thread, link_thread.name)
-        self.event.set()
+            self.add_task(link_thread, link_thread.name.encode("utf-8"))
 
     def choose_thread(self):
         return self.link_threads[0]
 
     def add_task(self, target, buf):
+        self.event.set()
         if type(target) == int:
             if target == WriterThread.TARGET_SESSION:
                 self.tasks.put((self.session_thread, buf))
@@ -148,6 +159,11 @@ class WriterThread(Thread):
 
             thread, buf = self.tasks.get()
             thread.socket.send(buf)
+
+            try:
+                self.logger.debug("Send to remote:" + buf.decode("utf-8"))
+            except UnicodeDecodeError:
+                self.logger.debug("Send to remote: binary data")
 
             if self.tasks.empty():
                 self.event.clear()
