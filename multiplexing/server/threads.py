@@ -1,3 +1,4 @@
+import random
 import socket
 from queue import Queue
 from threading import Thread, Event, Lock
@@ -22,6 +23,8 @@ class SessionThread(Thread):
         self.service_thread.start()
         self.writer_thread.start()
 
+        self.seq = -1
+
     def add_link(self, socket, remote, name=None):
         link_thread = LinkThread(self, self.writer_thread, socket, remote, name)
         self.link_threads.append(link_thread)
@@ -41,6 +44,10 @@ class SessionThread(Thread):
     def run(self):
         self.stop.wait()
         self.end()
+
+    def get_seq(self):
+        self.seq += 1
+        return self.seq
 
 
 class LinkThread(Thread):
@@ -120,12 +127,14 @@ class WriterThread(Thread):
                 target = self.choose_link()
             else:
                 target = self.service_thread
-        with self.lock:
-            self.queue.put((target, load))
+            with self.lock:
+                self.queue.put((target, load))
         self.event.set()
 
     def choose_link(self) -> LinkThread:
-        return self.link_threads[0]
+        l = len(self.link_threads)
+        return self.link_threads[random.randint(0, l - 1)]
+        # return self.link_threads[random.randint(0, 0)]
 
 
 class ServiceThread(Thread):
@@ -159,7 +168,13 @@ class ServiceThread(Thread):
                 self.event.clear()
                 self.socket = None
                 continue
-            self.writer_thread.add_task(WriterThread.TARGET_CLIENT, buf)
+            self.writer_thread.add_task(WriterThread.TARGET_CLIENT, self.wrap(buf))
+
+    def wrap(self, buf):
+        l = len(buf)
+        seq = self.session_thread.get_seq()
+        print(seq)
+        return seq.to_bytes(4, 'big') + l.to_bytes(4, 'big') + buf
 
     def send(self, buf):
         if self.socket is None:

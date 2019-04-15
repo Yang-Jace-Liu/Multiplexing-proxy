@@ -1,6 +1,7 @@
 import socket
+import time
 from queue import Queue
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 
 from multiplexing import logger
 from multiplexing.client.config import Config
@@ -29,6 +30,11 @@ class SessionThread(Thread):
 
         self.stop = Event()
 
+        self.completed_seq = set()
+        self.cached_msg = {}
+        self.expected_seq = 0
+        self.lock = Lock()
+
     def end(self):
         self.socket.close()
         if self.write_thread is not None:
@@ -42,11 +48,13 @@ class SessionThread(Thread):
         self.logger.debug("Session ended")
 
     def run(self):
+        self.logger.debug(self.name + " started")
         self.socket.settimeout(60)
 
         for i in range(self.config.link_num):
             self.link_threads.append(LinkThread(self, None, self.config))
         self.write_thread = WriterThread(self, self.link_threads)
+        time.sleep(1)
         for link_thread in self.link_threads:
             link_thread.write_thread = self.write_thread
             link_thread.start()
@@ -83,6 +91,7 @@ class LinkThread(Thread):
         self.session_thread = session_thread
         self.write_thread = write_thread  # type: WriterThread
         self.config = config
+        self.remote_port = 0
 
         self.name = "Session-" + str(self.session_thread.id) + ":Link-" + str(self.id)
         self.logger = logger.getLogger(self.name)
@@ -91,10 +100,15 @@ class LinkThread(Thread):
         self.id = LinkThread.get_id()
         self.stop = Event()
 
+        self.last_seq = 0
+        self.wait_num = 0
+        self.left_part = None
+
     def connect(self):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.settimeout(60)
-        self.socket.connect((self.config.proxy_server_hostname, self.config.proxy_server_port))
+        self.remote_port = self.config.proxy_server_port + (self.id % 2)
+        self.socket.connect((self.config.proxy_server_hostname, self.remote_port))
 
     def end(self):
         self.socket.close()
@@ -109,11 +123,45 @@ class LinkThread(Thread):
                     self.logger.debug("Disconnected")
                     self.end()
                     return
-                self.write_thread.add_task(self.session_thread, buf)
+                completed = self.read(buf)
+                with self.session_thread.lock:
+                    self.session_thread.completed_seq = self.session_thread.completed_seq.union(completed)
+                    while self.session_thread.expected_seq in self.session_thread.completed_seq:
+                        self.write_thread.add_task(self.session_thread, self.session_thread.cached_msg[self.session_thread.expected_seq])
+                        del self.session_thread.cached_msg[self.session_thread.expected_seq]
+                        self.session_thread.completed_seq.remove(self.session_thread.expected_seq)
+                        self.session_thread.expected_seq+= 1
+
             except socket.timeout as e:
                 if self.stop.is_set():
                     self.end()
                     return
+
+    def read(self, buf):
+        completed = set()
+        if self.left_part is not None:
+            buf = self.left_part + buf
+            self.left_part = None
+        while len(buf) > 0:
+            if self.wait_num != 0:
+                self.session_thread.cached_msg[self.last_seq] += buf[:self.wait_num]
+                old_wait_num = self.wait_num
+                self.wait_num -= len(buf[:self.wait_num])
+                buf = buf[old_wait_num:]
+                if self.wait_num == 0:
+                    completed.add(self.last_seq)
+            else:
+                if len(buf) < 8:
+                    self.left_part = buf
+                    break
+                else:
+                    self.last_seq = int.from_bytes(buf[:4], 'big')
+                    self.wait_num = int.from_bytes(buf[4:8], 'big')
+                    self.session_thread.cached_msg[self.last_seq] = b''
+                    buf = buf[8:]
+
+                    print(str(self.last_seq) + " Expected seq: " + str(self.session_thread.expected_seq) + " From remote port: " + str(self.remote_port))
+        return completed
 
 
 class WriterThread(Thread):
@@ -160,10 +208,10 @@ class WriterThread(Thread):
             thread, buf = self.tasks.get()
             thread.socket.send(buf)
 
-            try:
-                self.logger.debug("Send to remote:" + buf.decode("utf-8"))
-            except UnicodeDecodeError:
-                self.logger.debug("Send to remote: binary data")
+            # try:
+            #    self.logger.debug("Send to remote:" + buf.decode("utf-8"))
+            # except UnicodeDecodeError:
+            #    self.logger.debug("Send to remote: binary data")
 
             if self.tasks.empty():
                 self.event.clear()
